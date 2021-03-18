@@ -1,4 +1,6 @@
+from typing import Dict
 from numpy import random
+from numpy.lib.function_base import append
 import torch
 import gym
 import copy
@@ -10,70 +12,84 @@ import numpy as np
 from noise_generator import Truncated_normal_noise
 import torch.optim as optim
 import os
+from multiagent_wrapper import Multiagent_wrapper
 
 class M3DDPG():
     def __init__(self, 
                 environment, 
-                actor_model,
-                critic_model,
+                actor_models,
+                critic_models,
+                #action_shapes,
+                #observation_shapes,
                 replay_buffer,
-                noise_generator,
                 device,
-                actor_lr,
-                critic_lr,
-                discount=0.99,
-                tau=0.001,
-                noise_level=0.2,
-                noise_clip=1, 
-                noise_decay=1,
-                batch_size=64,
-                max_episode_length=500,
-                update_actor_frequency = 2,
-                epsilon = 0.2,
-                save_path_models="./models/",
-                save_path_data="./data/"):
+                config: Dict):
+
+        """
+        discount=0.99,
+        tau=0.001,
+        noise_level=0.2,
+        noise_clip=1,
+        batch_size=64,
+        max_episode_length=250,
+        update_actor_frequency = 2,
+        epsilon = 0.2,
+        save_path_models="./models/",
+        save_path_data="./data/"
+        """
+
+        self.env = environment
+        self.config = config
+        self.device = device
+        self.replay_buffer = replay_buffer
 
         self.dtype = torch.float32
-        self.env = environment
+        
+        self.action_shapes = action_shapes
+        self.observation_shapes = observation_shapes
+        self.action_highs = actions_highs
+        self.action_lows = action_lows
+        
 
         self.single_action_size = 4
         self.num_agents = 2
         self.joint_action_size = self.single_action_size * self.num_agents
 
-        self.actors = TwinNetwork(actor_model).train().to(device)
-        self.target_actors = copy.deepcopy(self.actors).eval().to(device)
-        self.critics = TwinNetwork(critic_model).train().to(device)
-        self.target_critics = copy.deepcopy(self.critics).eval().to(device)
 
-        self.actor_1_optimizer = optim.Adam(self.actors.network_1.parameters(), lr = actor_lr)
-        self.actor_2_optimizer = optim.Adam(self.actors.network_2.parameters(), lr = actor_lr)
+        self.actors, self.critics, self.target_actors, self.target_critics, self.actor_optimizers, self.critic_optimizers  = []
+        for i in range(len(actor_models)):
+            self.actors.append(actor_models[i].train().to(self.device))
+            self.critics.append(critic_models[i].train().to(self.device))
 
-        self.critic_1_optimizer = optim.Adam(self.critics.network_1.parameters(), lr = critic_lr)
-        self.critic_2_optimizer = optim.Adam(self.critics.network_2.parameters(), lr = critic_lr)
+            self.target_actors.append(copy.copy.deepcopy(actor_models[i]).eval().to(self.device))
+            self.target_critics.append(copy.copy.deepcopy(critic_models[i]).eval().to(self.device))
 
-        self.device = device
-        self.replay_buffer = replay_buffer
-        self.update_actor_frequency = update_actor_frequency
+            self.actor_optimizers.append(optim.Adam(self.actors[i].parameters(), lr= self.config["actor_learning_rates"][i]))
+            self.critic_optimizers.append(optim.Adam(self.critic[i].parameters(), lr= self.config["critic_learning_rates"][i]))
 
-        self.save_path_models = save_path_models
-        self.save_path_data = save_path_data
+        
+        
+        #self.update_actor_frequency = update_actor_frequency
 
-        self.noise = noise_generator
-        self.noise_level = noise_level
-        self.noise_clip = noise_clip
-        self.noise_decay = noise_decay
-        self.epsilon = epsilon
+        #self.save_path_models = save_path_models
+        #self.save_path_data = save_path_data
+
+        #self.noise = noise_generator
+        #self.noise_level = noise_level
+        #self.noise_clip = noise_clip
+        #self.noise_decay = noise_decay
+        #self.epsilon = epsilon
 
         self.action_high = self.env.action_space.high.max()
         self.action_low = self.env.action_space.low.min()
 
-        self.MSE = torch.nn.MSELoss()
+        self.loss = torch.nn.MSELoss()
         
-        self.batch_size = batch_size
-        self.discount = discount
-        self.tau = tau
+        #self.batch_size = batch_size
+        #self.discount = discount
+        #self.tau = tau
 
-        self.max_episode_length = max_episode_length
+        #self.max_episode_length = max_episode_length
 
         self.total_iterations = 0
 
