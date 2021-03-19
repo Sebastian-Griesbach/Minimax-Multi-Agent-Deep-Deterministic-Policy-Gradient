@@ -3,31 +3,34 @@ import numpy as np
 from abc import ABC, abstractmethod
 
 class Multiagent_wrapper(ABC, gym.Wrapper):
-    def __init__(self, env, num_agents, action_dims, observation_dims):
+    def __init__(self, env, state_space, num_agents, action_spaces, observation_spaces):
         gym.Wrapper.__init__(env)
 
+        self.state_space = state_space
         self.num_agents = num_agents
-        self.action_spaces = action_dims
-        self.observation_space = observation_dims
+        self.action_spaces = action_spaces
+        self.observation_spaces = observation_spaces
 
     def step(self, actions):
         joint_action = self._build_joint_action(actions)
-        observation, reward, done, info = self.env.step(joint_action)
-        observations = self._split_observation(observation)
-        rewards = self._calculate_rewards(observation, reward, info)
-        return observations, rewards, done, info
+        state, reward, done, info = self.env.step(joint_action)
+        observations = self._build_observations(state, info)
+        rewards = self._build_rewards(state, reward, info)
+        return state, observations, rewards, done, info
 
     def reset(self):
-        observation = self.reset()
-        return self._build_observations(observation)
-
-    def _build_joint_action(self, actions):
-        return np.hstack(actions)
+        state = self.reset()
+        observations = self._build_observations(state)
+        return state, observations
 
     @abstractmethod
-    def _build_observations(self, observation, info):
+    def _build_joint_action(self, actions):
         pass
 
     @abstractmethod
-    def _build_rewards(self, observation, reward, info):
+    def _build_observations(self, state, info):
+        pass
+
+    @abstractmethod
+    def _build_rewards(self, state, reward, info):
         pass
