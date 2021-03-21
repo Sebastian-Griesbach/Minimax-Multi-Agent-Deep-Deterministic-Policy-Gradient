@@ -4,11 +4,13 @@ from numpy.lib.function_base import append, select
 import torch
 import gym
 import copy
+from torch.optim import optimizer
 from torch.serialization import save
 from tqdm import tqdm
 import numpy as np
 import torch.optim as optim
 import os
+from collections import deque
 from multiagent_wrapper import Multiagent_wrapper
 from replay_buffer import Multiagent_replay_buffer
 
@@ -120,7 +122,7 @@ class M3DDPG():
 
             states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch = self.replay_buffer.sample(self.batch_size)
     
-            self.update_critice(states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch)
+            self.update_critics(states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch)
 
             if self.total_train_steps % self.update_actor_frequency == 0:
                 self.update_actor(states_batch, observations_batch, actions_batch)
@@ -198,32 +200,63 @@ class M3DDPG():
 
         return left_episode_rewards, right_episode_rewards
 
-    def update_critice(self, states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch):
+    def update_critics(self, states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch):
         with torch.no_grad(): 
             #next_actions = map(self.actors, next_observations_batch)
 
             #next_actions = self.add_noise_to_action(torch.hstack(self.target_actors(next_states)), noise_level = self.noise_level)
             #next_actions = torch.hstack(self.target_actors(next_states))
-            next_actions_batch = _execute_function_param_pairs(self.target_actors, next_observations_batch, False)
-            next_q_values_batch = _execute_function_param_pairs(self.target_critics, zip(next_states_batch, next_actions_batch), True)
-            #TODO continue here
-            next_q_value_1, next_q_value_2 = self.target_critics(torch.hstack([next_states, next_actions]))
-            targets_1 = (rewards[:,0].reshape(-1, 1) + (1-terminals) * self.discount * next_q_value_1).detach()
-            targets_2 = (rewards[:,1].reshape(-1, 1) + (1-terminals) * self.discount * next_q_value_2).detach()
+            next_actions_batch = _map_function_arg_pairs(self.target_actors, next_observations_batch)
+            next_q_values_batch = _map_function_args_pairs(self.target_critics, next_states_batch, *next_actions_batch)
+
+            #next_q_value_1, next_q_value_2 = self.target_critics(torch.hstack([next_states, next_actions]))
+            #targets_1 = (rewards[:,0].reshape(-1, 1) + (1-terminals) * self.discount * next_q_value_1).detach()
+            #targets_2 = (rewards[:,1].reshape(-1, 1) + (1-terminals) * self.discount * next_q_value_2).detach()
+            q_targets = _map_function_args_pairs(self._calculate_q_targets, rewards_batch, done_batch, self.discounts, next_q_values_batch)
 
         #q_values_1, q_values_2 = self.critics(torch.hstack([states, actions]))
-        q_values = _execute_function_param_pairs(self.critics, zip(states_batch, actions_batch), True)
-        q_values = map(self.critics, states_batch, actions_batch)
+        q_values = _map_function_args_pairs(self.critics, states_batch, *actions_batch)
+        critic_loses = map(lambda values, targets: self.loss(values, targets), q_values, q_targets)
+        optimizer_steps = map(self._optimizer_step, self.critic_optimizers, critic_loses)
 
-        self.critic_1_optimizer.zero_grad()
-        critic_1_loss = self.MSE(q_values_1, targets_1)
-        critic_1_loss.backward()
-        self.critic_1_optimizer.step()
+        #execute the maps
+        deque(optimizer_steps,0)
 
-        self.critic_2_optimizer.zero_grad()
-        critic_2_loss = self.MSE(q_values_2, targets_2)
-        critic_2_loss.backward()
-        self.critic_2_optimizer.step()
+        #self.critic_1_optimizer.zero_grad()
+        #critic_1_loss = self.MSE(q_values_1, targets_1)
+        #critic_1_loss.backward()
+        #self.critic_1_optimizer.step()
+
+        #self.critic_2_optimizer.zero_grad()
+        #critic_2_loss = self.MSE(q_values_2, targets_2)
+        #critic_2_loss.backward()
+        #self.critic_2_optimizer.step()
+
+    def _calculate_q_targets(self, rewards, dones, discount, next_q_values):
+        return (rewards.reshape(-1, 1) + (1-dones) * discount * next_q_values).detach()
+
+    def _optimizer_step(self, optimizer, loss):
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+    def update_actors(self, states_batch, observations_batch, actions_batch):
+        actions = _map_function_arg_pairs(self.actors, observations_batch)
+        #actions_1, actions_2 = self.actors(states)
+        replay_joint_actions = _map_function_args_pairs(replace_list_entry, zip(actions_batch), actions, range(self.num_agents))
+        #replay_actions_1, replay_actions_2 = (actions[:,:self.single_action_size], actions[:,self.single_action_size:])
+        actor_losses = _map_function_args_pairs(self.critics, states_batch, replay_joint_actions)
+
+
+        self.actor_1_optimizer.zero_grad()
+        actor_1_loss = -self.critics.network_1(torch.hstack([states, torch.hstack([actions_1, replay_actions_2])])).mean()
+        actor_1_loss.backward()
+        self.actor_1_optimizer.step()
+
+        self.actor_2_optimizer.zero_grad()
+        actor_2_loss = -self.critics.network_2(torch.hstack([states, torch.hstack([replay_actions_1, actions_2])])).mean()
+        actor_2_loss.backward()
+        self.actor_2_optimizer.step()
 
     def update_target_net(self, target_net, true_net, tau):
         for target_params, true_params in zip(target_net.parameters(), true_net.parameters()):
@@ -287,6 +320,15 @@ class M3DDPG():
         load_path = os.path.join(path,filename)
         return torch.load(load_path)
 
-def _execute_function_param_pairs(function_list, params, multiparam):
-    execute = (lambda func, args: func(*args)) if multiparam else (lambda func, args: func(args))
-    return list(map(execute, function_list, params))
+
+#Util Methods
+def _map_function_args_pairs(function_list, *args):
+    return map(lambda func, args: func(*args), function_list, zip(*args))
+
+def _map_function_arg_pairs(function_list, arg):
+    return map(lambda func, arg: func(arg), function_list, arg)
+
+def replace_list_entry(_list, entry, id):
+        list_copy = copy.deepcopy(_list)
+        list_copy[id] = entry
+        return list_copy
