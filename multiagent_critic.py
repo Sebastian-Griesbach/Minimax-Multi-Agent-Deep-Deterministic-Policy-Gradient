@@ -6,10 +6,10 @@ class Multiagent_critic(ABC, torch.nn.Module):
         super(Multiagent_critic, self).__init__()
         self.model = model
 
-    def forward(self, **kwargs):
-        combined_input = self._build_input(**kwargs)
+    def forward(self, state, *actions):
+        combined_input = self._build_input(state, *actions)
         return self.model(combined_input)
 
     @abstractmethod
-    def _build_input(self, **kwargs) -> torch.tensor:
+    def _build_input(self, state, *actions) -> torch.tensor:
         pass
