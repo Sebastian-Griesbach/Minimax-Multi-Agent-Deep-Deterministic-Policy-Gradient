@@ -27,10 +27,10 @@ class M3DDPG():
                 noise_levels,
                 noise_clips,
                 epsilons,
-                batch_size=64,
-                max_episode_length=500,
-                max_replay_buffer_size = 100000,
-                update_actor_frequency = 2):
+                max_episode_length,
+                max_replay_buffer_size,
+                update_target_nets_fequency = 2,
+                batch_size=64):
 
         """
         save_path_models="./models/",
@@ -49,7 +49,7 @@ class M3DDPG():
         self.epsilons = epsilons
         self.batch_size = batch_size
         self.max_episode_length = max_episode_length
-        self.update_actor_frequency = update_actor_frequency
+        self.update_target_nets_fequency = update_target_nets_fequency
 
         self.state_shape = env.state_space.shape
         self.action_shapes = [action_space.shape for action_space in env.action_spaces]
@@ -80,10 +80,6 @@ class M3DDPG():
                                                         max_size=max_replay_buffer_size, 
                                                         dtype=self.dtype)
 
-
-        #self.save_path_models = save_path_models
-        #self.save_path_data = save_path_data
-
         self.loss = torch.nn.MSELoss()
 
 
@@ -100,7 +96,7 @@ class M3DDPG():
             state, observations = self.env.reset()
             self.env_done = False
 
-        for train_step in tqdm(range(num_train_steps)):
+        for _ in tqdm(range(num_train_steps)):
 
             if self.env_done:
                 state, observations = self.env.reset()
@@ -124,211 +120,68 @@ class M3DDPG():
     
             self.update_critics(states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch)
 
-            if self.total_train_steps % self.update_actor_frequency == 0:
-                self.update_actor(states_batch, observations_batch, actions_batch)
+            if self.total_train_steps % self.update_target_nets_fequency == 0:
+                self.update_actors(states_batch, observations_batch, actions_batch)
                 self.update_target_nets()
 
         return self.episode_rewards
 
 
-        left_episode_rewards = []
-        right_episode_rewards = []
-
-        for _ in tqdm(range(num_iterations)):
-
-            observation = self.env.reset()
-            done = False
-            episode_step = 0
-            left_episode_reward = 0
-            right_episode_reward = 0
-            self.total_iterations += 1
-
-            while (not done) and (episode_step <= self.max_episode_length):
-                episode_step += 1
-
-                actions = self.select_action(observation, self.epsilon)
-
-                new_observation, rewards, done, _ = self.env.step(actions)
-                self.replay_buffer.add_transition(observation, actions, rewards, new_observation, done)
-                left_episode_reward += rewards[0]
-                right_episode_reward += rewards[1]
-                observation = new_observation
-
-                #load from replay buffer
-                states, actions, rewards, next_states, terminals = self.replay_buffer.sample(self.batch_size)
-                
-                #critic update
-                q_values_1, q_values_2 = self.critics(torch.hstack([states, actions]))
-                with torch.no_grad(): 
-                    next_actions = self.add_noise_to_action(torch.hstack(self.target_actors(next_states)), noise_level = self.noise_level)
-                    #next_actions = torch.hstack(self.target_actors(next_states))
-                    next_q_value_1, next_q_value_2 = self.target_critics(torch.hstack([next_states, next_actions]))
-                    targets_1 = (rewards[:,0].reshape(-1, 1) + (1-terminals) * self.discount * next_q_value_1).detach()
-                    targets_2 = (rewards[:,1].reshape(-1, 1) + (1-terminals) * self.discount * next_q_value_2).detach()
-
-                self.critic_1_optimizer.zero_grad()
-                critic_1_loss = self.MSE(q_values_1, targets_1)
-                critic_1_loss.backward()
-                self.critic_1_optimizer.step()
-
-                self.critic_2_optimizer.zero_grad()
-                critic_2_loss = self.MSE(q_values_2, targets_2)
-                critic_2_loss.backward()
-                self.critic_2_optimizer.step()
-
-                #actor update
-                if episode_step % self.update_actor_frequency == 0:
-                    actions_1, actions_2 = self.actors(states)
-                    replay_actions_1, replay_actions_2 = (actions[:,:self.single_action_size], actions[:,self.single_action_size:])
-
-                    self.actor_1_optimizer.zero_grad()
-                    actor_1_loss = -self.critics.network_1(torch.hstack([states, torch.hstack([actions_1, replay_actions_2])])).mean()
-                    actor_1_loss.backward()
-                    self.actor_1_optimizer.step()
-
-                    self.actor_2_optimizer.zero_grad()
-                    actor_2_loss = -self.critics.network_2(torch.hstack([states, torch.hstack([replay_actions_1, actions_2])])).mean()
-                    actor_2_loss.backward()
-                    self.actor_2_optimizer.step()
-
-                    #update target model
-                    self.update_target_net(self.target_actors, self.actors, self.tau)
-                    self.update_target_net(self.target_critics, self.critics, self.tau)
-
-            left_episode_rewards.append(left_episode_reward)
-            right_episode_rewards.append(right_episode_reward)
-
-        return left_episode_rewards, right_episode_rewards
-
     def update_critics(self, states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch):
-        with torch.no_grad(): 
-            #next_actions = map(self.actors, next_observations_batch)
+        with torch.no_grad():
+            next_actions_batch = list(_map_function_arg_pairs(self.target_actors, next_observations_batch))
 
-            #next_actions = self.add_noise_to_action(torch.hstack(self.target_actors(next_states)), noise_level = self.noise_level)
-            #next_actions = torch.hstack(self.target_actors(next_states))
-            next_actions_batch = _map_function_arg_pairs(self.target_actors, next_observations_batch)
-            next_q_values_batch = _map_function_args_pairs(self.target_critics, next_states_batch, *next_actions_batch)
+        for i, critic in enumerate(self.critics):
+            with torch.no_grad(): 
 
-            #next_q_value_1, next_q_value_2 = self.target_critics(torch.hstack([next_states, next_actions]))
-            #targets_1 = (rewards[:,0].reshape(-1, 1) + (1-terminals) * self.discount * next_q_value_1).detach()
-            #targets_2 = (rewards[:,1].reshape(-1, 1) + (1-terminals) * self.discount * next_q_value_2).detach()
-            q_targets = _map_function_args_pairs(self._calculate_q_targets, rewards_batch, done_batch, self.discounts, next_q_values_batch)
+                next_q_values = self.target_critics[i](next_states_batch, *next_actions_batch)
+                q_targets = rewards_batch[i].reshape(-1, 1) + (1-done_batch) * self.discounts[i] * next_q_values
 
-        #q_values_1, q_values_2 = self.critics(torch.hstack([states, actions]))
-        q_values = _map_function_args_pairs(self.critics, states_batch, *actions_batch)
-        critic_loses = map(lambda values, targets: self.loss(values, targets), q_values, q_targets)
-        optimizer_steps = map(self._optimizer_step, self.critic_optimizers, critic_loses)
-
-        #execute the maps
-        deque(optimizer_steps,0)
-
-        #self.critic_1_optimizer.zero_grad()
-        #critic_1_loss = self.MSE(q_values_1, targets_1)
-        #critic_1_loss.backward()
-        #self.critic_1_optimizer.step()
-
-        #self.critic_2_optimizer.zero_grad()
-        #critic_2_loss = self.MSE(q_values_2, targets_2)
-        #critic_2_loss.backward()
-        #self.critic_2_optimizer.step()
-
-    def _calculate_q_targets(self, rewards, dones, discount, next_q_values):
-        return (rewards.reshape(-1, 1) + (1-dones) * discount * next_q_values).detach()
-
-    def _optimizer_step(self, optimizer, loss):
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            q_values = critic(states_batch, *actions_batch)
+            
+            self.critic_optimizers[i].zero_grad()
+            critic_loss = self.loss(q_values, q_targets)
+            critic_loss.backward()
+            self.critic_optimizers[i].step()
 
     def update_actors(self, states_batch, observations_batch, actions_batch):
-        actions = _map_function_arg_pairs(self.actors, observations_batch)
-        #actions_1, actions_2 = self.actors(states)
-        replay_joint_actions = _map_function_args_pairs(replace_list_entry, zip(actions_batch), actions, range(self.num_agents))
-        #replay_actions_1, replay_actions_2 = (actions[:,:self.single_action_size], actions[:,self.single_action_size:])
-        actor_losses = _map_function_args_pairs(self.critics, states_batch, replay_joint_actions)
 
+        for i, actor in enumerate(self.actors):
+            actions = actor(observations_batch[i])
+            joint_actions = copy.deepcopy(actions_batch)
+            joint_actions[i] = actions
 
-        self.actor_1_optimizer.zero_grad()
-        actor_1_loss = -self.critics.network_1(torch.hstack([states, torch.hstack([actions_1, replay_actions_2])])).mean()
-        actor_1_loss.backward()
-        self.actor_1_optimizer.step()
+            self.actor_optimizers[i].zero_grad()
+            actor_loss = -self.critics[i](states_batch, *joint_actions)
+            actor_loss.backward()
+            self.actor_optimizers[i].step()
 
-        self.actor_2_optimizer.zero_grad()
-        actor_2_loss = -self.critics.network_2(torch.hstack([states, torch.hstack([replay_actions_1, actions_2])])).mean()
-        actor_2_loss.backward()
-        self.actor_2_optimizer.step()
+    def update_target_nets(self):
+        for i in range(self.num_agents):
+            self.update_target_net(self.target_actors[i], self.actors[i], self.taus[i])
+            self.update_target_net(self.target_critics[i], self.critics[i], self.taus[i])
 
     def update_target_net(self, target_net, true_net, tau):
         for target_params, true_params in zip(target_net.parameters(), true_net.parameters()):
             target_params.data.copy_(target_params.data * (1.0 - tau) + true_params.data * tau)
 
-    def add_noise_to_action(self, action, noise_level):
-        noise = (torch.randn_like(action) * noise_level).clamp(-self.noise_clip, self.noise_clip)
-        #noise = self.noise.generate(self.noise_level, self.noise_clip).to(self.device)
-        return torch.clip(action + noise,self.action_low, self.action_high)
+    def select_action(self, actor_id, observation):
+        random = np.random.uniform()
+        if(random <= self.epsilons[actor_id]):
+            #take random action
+            action = self.env.action_spaces[actor_id].sample()
+        else:
+            #take greedy action with noise
+            action = self.actors[actor_id](observation)
+            action = self.add_noise_to_action(action, self.noise_levels[actor_id])
+            action.cpu().numpy()
 
-    def select_action(self, observation, epsilon):
-        random_actions = self.env.action_space.sample().reshape(-1, self.single_action_size)
-        with torch.no_grad():
-            actions = self.add_noise_to_action(torch.hstack(self.actors(torch.FloatTensor(observation).to(self.device))), noise_level=self.noise_level)
-        greedy_actions = actions.cpu().numpy().reshape(-1, self.single_action_size)
+        return action
 
-        rand = np.random.uniform(size=self.num_agents).reshape(-1,1)
+    def add_noise_to_action(self, action, noise_level, actor_id):
+        noise = (torch.randn_like(action) * noise_level).clamp(-self.noise_clips[actor_id], self.noise_clips[actor_id])
+        return torch.clip(action + noise,self.action_lows[actor_id], self.action_highs[actor_id])
 
-        take_random = rand <= epsilon
-        take_greedy = np.invert(take_random)
-
-        actions = take_random * random_actions + take_greedy * greedy_actions
-        return actions.flatten()
-
-    def get_policy(self):
-        policy = copy.deepcopy(self.actors).eval().cpu()
-        def act(state):
-            with torch.no_grad():
-                tensor_state = torch.tensor(state, dtype=self.dtype, requires_grad=False)
-                action = torch.hstack(policy(tensor_state))
-            return action.numpy()
-
-        return act
-
-    def save_status(self,Prefix="MADDPG"):
-        actor_file_name = f'{Prefix}_actor_{self.total_iterations}its.pt'
-        self.save_model(self.actors, self.save_path_models, actor_file_name)
-        critic_file_name = f'{Prefix}_critic_{self.total_iterations}its.pt'
-        self.save_model(self.critics, self.save_path_models, critic_file_name)
-
-        replay_buffer_file_name = f'{Prefix}_replay_buffer_{self.total_iterations}its.pt'
-        save_path = os.path.join(self.save_path_data,replay_buffer_file_name)
-        self.replay_buffer.save(save_path)
-
-    def load_status(self, actor_file_name, critice_file_name, replay_buffer_file_name = None):
-        self.actors.load_state_dict(self.load_model(self.save_path_models, actor_file_name))
-        self.critics.load_state_dict(self.load_model(self.save_path_models, critice_file_name))
-        self.target_actors = copy.deepcopy(self.actors).eval().to(self.device)
-        self.target_critics = copy.deepcopy(self.critics).eval().to(self.device)
-
-        if(replay_buffer_file_name != None):
-            load_path = os.path.join(self.save_path_data,replay_buffer_file_name)
-            self.replay_buffer.load(load_path)
-
-
-    def save_model(self, model, path, filename):
-        save_path = os.path.join(path,filename)
-        torch.save(model.state_dict(), save_path)
-
-    def load_model(self, path, filename):
-        load_path = os.path.join(path,filename)
-        return torch.load(load_path)
-
-
-#Util Methods
-def _map_function_args_pairs(function_list, *args):
-    return map(lambda func, args: func(*args), function_list, zip(*args))
-
+#Util Method
 def _map_function_arg_pairs(function_list, arg):
     return map(lambda func, arg: func(arg), function_list, arg)
-
-def replace_list_entry(_list, entry, id):
-        list_copy = copy.deepcopy(_list)
-        list_copy[id] = entry
-        return list_copy
