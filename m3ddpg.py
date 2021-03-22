@@ -27,8 +27,8 @@ class M3DDPG():
                 noise_levels,
                 noise_clips,
                 epsilons,
-                max_episode_length,
                 max_replay_buffer_size,
+                burnin_steps = 10000,
                 update_target_nets_fequency = 2,
                 batch_size=64):
 
@@ -48,8 +48,8 @@ class M3DDPG():
         self.noise_clips = noise_clips
         self.epsilons = epsilons
         self.batch_size = batch_size
-        self.max_episode_length = max_episode_length
         self.update_target_nets_fequency = update_target_nets_fequency
+        self.burnin_steps = burnin_steps
 
         self.state_shape = env.state_space.shape
         self.action_shapes = [action_space.shape for action_space in env.action_spaces]
@@ -116,18 +116,20 @@ class M3DDPG():
             observations = new_observations
             state = next_state
 
-            states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch = self.replay_buffer.sample(self.batch_size)
-    
-            self.update_critics(states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch)
+            if(self.self.burnin_steps < self.total_iterations):
 
-            if self.total_train_steps % self.update_target_nets_fequency == 0:
-                self.update_actors(states_batch, observations_batch, actions_batch)
-                self.update_target_nets()
+                states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch = self.replay_buffer.sample(self.batch_size)
+        
+                self.update_critics(states_batch, next_states_batch, actions_batch, rewards_batch, next_observations_batch, done_batch)
+
+                if self.total_train_steps % self.update_target_nets_fequency == 0:
+                    self.update_actors(states_batch, observations_batch, actions_batch)
+                    self.update_target_nets()
 
         return self.episode_rewards
 
 
-    def update_critics(self, states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch):
+    def update_critics(self, states_batch, next_states_batch, actions_batch, rewards_batch, next_observations_batch, done_batch):
         with torch.no_grad():
             next_actions_batch = list(_map_function_arg_pairs(self.target_actors, next_observations_batch))
 
@@ -182,6 +184,51 @@ class M3DDPG():
         noise = (torch.randn_like(action) * noise_level).clamp(-self.noise_clips[actor_id], self.noise_clips[actor_id])
         return torch.clip(action + noise,self.action_lows[actor_id], self.action_highs[actor_id])
 
-#Util Method
+    #Utilility Methods
+
+    def get_policy(self, actor_id):
+        policy = copy.deepcopy(self.actors[actor_id]).eval().cpu()
+        def act(state):
+            with torch.no_grad():
+                tensor_state = torch.tensor(state, dtype=self.dtype, requires_grad=False)
+                action = policy(tensor_state)
+            return action.numpy()
+        return act
+
+    def save_status(self, dir_path, prefix="M3DDPG"):
+        for i in range(self.num_agents):
+            actor_file_name = f'{prefix}_actor{i}_{self.total_iterations}its.pt'
+            self.save_model(self.actors[i], dir_path, actor_file_name)
+            critic_file_name = f'{prefix}_critic{i}_{self.total_iterations}its.pt'
+            self.save_model(self.critics[i], dir_path, critic_file_name)
+            actor_optimizer_file_name = f'{prefix}_actor{i}_optimizer_{self.total_iterations}its.pt'
+            self.save_model(self.actor_optimizers[i], dir_path, actor_optimizer_file_name)
+            critic_optimizer_file_name = f'{prefix}_critic{i}_optimizer_{self.total_iterations}its.pt'
+            self.save_model(self.critic_optimizers[i], dir_path, critic_optimizer_file_name)
+
+    def load_status(self, dir_path, actor_file_names, critic_file_names, actor_optimizer_file_names, critic_optimizer_file_names):
+        for i in range(self.num_agents): 
+            self.load_model(self.actors[i], dir_path, actor_file_names[i])
+            self.load_model(self.critics[i], dir_path, critic_file_names[i])
+            self.target_actors[i] = copy.deepcopy(self.actors[i]).eval().to(self.device)
+            self.target_critics[i] = copy.deepcopy(self.critics[i]).eval().to(self.device)
+
+            self.load_model(self.actor_optimizers[i], dir_path, actor_optimizer_file_names)
+            self.load_model(self.critic_optimizers[i], dir_path, critic_optimizer_file_names)
+
+    def save_model(self, model, path, filename):
+        save_path = os.path.join(path,filename)
+        torch.save(model.state_dict(), save_path)
+
+    def load_model(self, model, path, filename):
+        load_path = os.path.join(path,filename)
+        model.load_state_dict(torch.load(load_path))
+
+    def numpy_to_tensor(self, np_array):
+        return torch.tensor(np_array, dtype=self.dtype)
+
+    def tensor_to_numpy(self, tensor):
+        return tensor.detach().cpu().numpy()
+
 def _map_function_arg_pairs(function_list, arg):
     return map(lambda func, arg: func(arg), function_list, arg)
