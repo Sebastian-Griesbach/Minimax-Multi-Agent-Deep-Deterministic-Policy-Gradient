@@ -1,7 +1,7 @@
 from torch.nn.modules.linear import Linear
-from ..multiagent_wrapper import Multiagent_wrapper
-from ..multiagent_critic import Multiagent_critic
-from ..m3ddpg import M3DDPG
+from multiagent_wrapper import Multiagent_wrapper
+from multiagent_critic import Multiagent_critic
+from m3ddpg import M3DDPG
 import laserhockey.hockey_env as h_env
 import gym
 import torch
@@ -26,13 +26,15 @@ def main():
                 device = "cpu",
                 discounts = [0.99, 0.99],
                 taus = [0.05, 0.05],
-                noise_levels = [0.2],
+                noise_levels = [0.2, 0.2],
                 noise_clips = [1.,1.],
                 epsilons = [0.2, 0.2],
                 batch_size=64,
-                max_episode_length=250,
+                burnin_steps=5,
                 max_replay_buffer_size = 1000000,
                 update_target_nets_fequency = 2)
+
+    m3ddpg.train(1000)
 
 class Multiagent_laserhockey_wrapper(Multiagent_wrapper):
     def __init__(self):

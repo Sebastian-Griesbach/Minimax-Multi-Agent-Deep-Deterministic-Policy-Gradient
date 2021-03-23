@@ -32,11 +32,6 @@ class M3DDPG():
                 update_target_nets_fequency = 2,
                 batch_size=64):
 
-        """
-        save_path_models="./models/",
-        save_path_data="./data/"
-        """
-
         self.env = env
         self.device = device
 
@@ -53,10 +48,10 @@ class M3DDPG():
 
         self.state_shape = env.state_space.shape
         self.action_shapes = [action_space.shape for action_space in env.action_spaces]
-        self.observation_shapes = [observation_shape.shape for observation_shape in env.observation_shapes]
+        self.observation_shapes = [observation_space.shape for observation_space in env.observation_spaces]
 
-        self.action_highs = [action_space.high for action_space in env.action_spaces]
-        self.action_lows = [action_space.low for action_space in env.action_spaces]
+        self.action_highs = [self.numpy_to_tensor(action_space.high) for action_space in env.action_spaces]
+        self.action_lows = [self.numpy_to_tensor(action_space.low) for action_space in env.action_spaces]
         
         self.num_agents = env.num_agents
 
@@ -66,8 +61,8 @@ class M3DDPG():
             self.actors.append(actor_models[i].train().to(self.device))
             self.critics.append(critic_models[i].train().to(self.device))
 
-            self.target_actors.append(copy.copy.deepcopy(actor_models[i]).eval().to(self.device))
-            self.target_critics.append(copy.copy.deepcopy(critic_models[i]).eval().to(self.device))
+            self.target_actors.append(copy.deepcopy(actor_models[i]).eval().to(self.device))
+            self.target_critics.append(copy.deepcopy(critic_models[i]).eval().to(self.device))
 
             self.actor_optimizers.append(optim.Adam(self.actors[i].parameters(), lr = actor_learning_rates[i]))
             self.critic_optimizers.append(optim.Adam(self.critics[i].parameters(), lr = critic_learning_rates[i]))
@@ -86,7 +81,7 @@ class M3DDPG():
         self.total_iterations = 0
 
         self.env_done = True
-        self.rewards_histroy = np.zeros(1,self.env.num_agents)
+        self.rewards_histroy = np.zeros((1, self.env.num_agents))
         self.episode_rewards = np.zeros(self.env.num_agents)
         self.total_train_steps = 0
 
@@ -96,11 +91,14 @@ class M3DDPG():
             state, observations = self.env.reset()
             self.env_done = False
 
-        for _ in tqdm(range(num_train_steps)):
+        iteration_steps =  max(self.total_iterations, self.burnin_steps) - self.total_iterations + num_train_steps
+
+        for _ in tqdm(range(iteration_steps)):
+            self.total_iterations += 1
 
             if self.env_done:
                 state, observations = self.env.reset()
-                self.rewards_histroy.append(self.episode_rewards, axis=0)
+                np.append(self.rewards_histroy, self.episode_rewards.reshape((1,-1)), axis=1)
 
             actions = []
             for actor_id in range(self.env.num_agents):
@@ -116,7 +114,7 @@ class M3DDPG():
             observations = new_observations
             state = next_state
 
-            if(self.self.burnin_steps < self.total_iterations):
+            if(self.burnin_steps < self.total_iterations):
 
                 states_batch, next_states_batch, observations_batch, actions_batch, rewards_batch, next_observations_batch, done_batch = self.replay_buffer.sample(self.batch_size)
         
@@ -154,7 +152,7 @@ class M3DDPG():
             joint_actions[i] = actions
 
             self.actor_optimizers[i].zero_grad()
-            actor_loss = -self.critics[i](states_batch, *joint_actions)
+            actor_loss = -self.critics[i](states_batch, *joint_actions).mean()
             actor_loss.backward()
             self.actor_optimizers[i].step()
 
@@ -174,15 +172,16 @@ class M3DDPG():
             action = self.env.action_spaces[actor_id].sample()
         else:
             #take greedy action with noise
-            action = self.actors[actor_id](observation)
-            action = self.add_noise_to_action(action, self.noise_levels[actor_id])
-            action.cpu().numpy()
+            torch_observation = self.numpy_to_tensor(observation)
+            action = self.actors[actor_id](torch_observation)
+            action = self.add_noise_to_action(action, self.noise_levels[actor_id], self.noise_clips[actor_id], self.action_highs[actor_id], self.action_lows[actor_id])
+            action = self.tensor_to_numpy(action)
 
         return action
 
-    def add_noise_to_action(self, action, noise_level, actor_id):
-        noise = (torch.randn_like(action) * noise_level).clamp(-self.noise_clips[actor_id], self.noise_clips[actor_id])
-        return torch.clip(action + noise,self.action_lows[actor_id], self.action_highs[actor_id])
+    def add_noise_to_action(self, action, noise_level, noise_clip, action_low, action_high):
+        noise = (torch.randn_like(action) * noise_level).clamp(-noise_clip, noise_clip)
+        return torch.max(torch.min(action + noise_clip, action_high), action_low)
 
     #Utilility Methods
 

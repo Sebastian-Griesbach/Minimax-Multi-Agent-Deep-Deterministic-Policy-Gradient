@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 class Multiagent_wrapper(ABC, gym.Wrapper):
     def __init__(self, env, state_space, num_agents, action_spaces, observation_spaces):
-        gym.Wrapper.__init__(env)
+        gym.Wrapper.__init__(self, env)
 
         self.state_space = state_space
         self.num_agents = num_agents
@@ -19,7 +19,7 @@ class Multiagent_wrapper(ABC, gym.Wrapper):
         return state, observations, rewards, done, info
 
     def reset(self):
-        state = self.reset()
+        state = self.env.reset()
         observations = self._build_observations(state)
         return state, observations
 

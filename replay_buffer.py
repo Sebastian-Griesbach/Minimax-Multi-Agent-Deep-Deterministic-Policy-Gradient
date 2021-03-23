@@ -67,7 +67,7 @@ class Multiagent_replay_buffer():
         return states, next_states, observations, actions, rewards, next_observations, dones
 
     def _get_subset_from_sample(self, keys, sample):
-        return map(self._numpy_to_tensor, list(itemgetter(**keys)(sample)))
+        return list(map(self._numpy_to_tensor, list(itemgetter(*keys)(sample))))
 
     def _numpy_to_tensor(self, np_array):
         return torch.tensor(np_array, dtype=self.dtype).to(self.return_device)
