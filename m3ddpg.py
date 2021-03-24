@@ -124,7 +124,7 @@ class M3DDPG():
                     self.update_actors(states_batch, observations_batch, actions_batch)
                     self.update_target_nets()
 
-        return self.episode_rewards
+        return self.rewards_histroy
 
 
     def update_critics(self, states_batch, next_states_batch, actions_batch, rewards_batch, next_observations_batch, done_batch):

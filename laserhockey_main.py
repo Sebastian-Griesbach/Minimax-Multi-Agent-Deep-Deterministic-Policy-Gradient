@@ -34,7 +34,8 @@ def main():
                 max_replay_buffer_size = 1000000,
                 update_target_nets_fequency = 2)
 
-    m3ddpg.train(1000)
+    return m3ddpg
+    #m3ddpg.train(1000)
 
 class Multiagent_laserhockey_wrapper(Multiagent_wrapper):
     def __init__(self):
