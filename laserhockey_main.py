@@ -27,11 +27,12 @@ def main():
                 discounts = [0.99, 0.99],
                 taus = [0.05, 0.05],
                 noise_levels = [0.2, 0.2],
+                critic_noise_levels = [0.02, 0.02],
                 noise_clips = [1.,1.],
                 epsilons = [0.2, 0.2],
                 batch_size=64,
-                burnin_steps=5,
-                max_replay_buffer_size = 1000000,
+                burnin_steps=100000,
+                max_replay_buffer_size = 100000,
                 update_target_nets_fequency = 2)
 
     return m3ddpg
@@ -66,9 +67,7 @@ class HockeyActorNet(nn.Module):
         self.layers = nn.Sequential(
           nn.Linear(in_dim,128),
           nn.ReLU(),
-          nn.Linear(128,64),
-          nn.ReLU(),
-          nn.Linear(64,out_dim)
+          nn.Linear(128, out_dim)
         )
 
         self.register_buffer('min_value', torch.tensor(min_value, requires_grad=False, dtype=torch.float32))
@@ -81,11 +80,9 @@ class HockeyCriticNet(Multiagent_critic):
     def __init__(self, in_dim):
         super().__init__()
         self.layers = nn.Sequential(
-          nn.Linear(in_dim,128),
+          nn.Linear(in_dim,256),
           nn.ReLU(),
-          nn.Linear(128,64),
-          nn.ReLU(),
-          nn.Linear(64,1)
+          nn.Linear(256,1)
         )
 
     def forward(self, state, *actions) -> torch.tensor:
