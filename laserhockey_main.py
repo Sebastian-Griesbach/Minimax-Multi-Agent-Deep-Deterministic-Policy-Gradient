@@ -23,16 +23,16 @@ def main():
                 critic_models = [critic1, critic2],
                 actor_learning_rates = [0.0001, 0.0001],
                 critic_learning_rates = [0.0001, 0.0001],
-                device = "cpu",
+                device = "cuda",
                 discounts = [0.99, 0.99],
                 taus = [0.05, 0.05],
                 noise_levels = [0.2, 0.2],
                 critic_noise_levels = [0.02, 0.02],
                 noise_clips = [1.,1.],
                 epsilons = [0.2, 0.2],
-                batch_size=64,
+                batch_size=512,
                 burnin_steps=100000,
-                max_replay_buffer_size = 100000,
+                max_replay_buffer_size = 200000,
                 update_target_nets_fequency = 2)
 
     return m3ddpg
@@ -56,8 +56,8 @@ class Multiagent_laserhockey_wrapper(Multiagent_wrapper):
 
     def _build_rewards(self, state, reward, info):
         pure_reward_p1 = reward - info["reward_closeness_to_puck"]
-        reward_p1 = pure_reward_p1
-        reward_p2 = -pure_reward_p1
+        reward_p1 = max(0., pure_reward_p1)
+        reward_p2 = max(0., -pure_reward_p1)
         return [reward_p1, reward_p2]
 
 class HockeyActorNet(nn.Module):

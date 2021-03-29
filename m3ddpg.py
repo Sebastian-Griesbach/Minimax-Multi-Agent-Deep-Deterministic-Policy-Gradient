@@ -84,6 +84,7 @@ class M3DDPG():
 
         self.env_done = True
         self.env_observations = None
+        self.env_state = None
         self.rewards_histroy = np.zeros((1, self.env.num_agents))
         self.episode_rewards = np.zeros(self.env.num_agents)
         self.total_train_steps = 0
@@ -91,7 +92,7 @@ class M3DDPG():
     def train(self, num_train_steps):
 
         if self.env_done:
-            state, self.env_observations = self.env.reset()
+            self.env_state, self.env_observations = self.env.reset()
             self.env_done = False
 
         iteration_steps =  max(self.total_iterations, self.burnin_steps) - self.total_iterations + num_train_steps
@@ -100,8 +101,9 @@ class M3DDPG():
             self.total_iterations += 1
 
             if self.env_done:
-                state, self.env_observations = self.env.reset()
-                self.rewards_histroy = np.append(self.rewards_histroy, self.episode_rewards.reshape((1,-1)), axis=1)
+                self.env_state, self.env_observations = self.env.reset()
+                self.rewards_histroy = np.append(self.rewards_histroy, self.episode_rewards.reshape((1,-1)), axis=0)
+                self.episode_rewards = np.zeros(self.env.num_agents)
 
             actions = []
             for actor_id in range(self.env.num_agents):
@@ -110,12 +112,12 @@ class M3DDPG():
 
             next_state, new_observations, rewards, self.env_done, _ = self.env.step(actions)
 
-            self.replay_buffer.add_transition(state, next_state, self.env_observations, actions, rewards, new_observations, self.env_done)
+            self.replay_buffer.add_transition(self.env_state, next_state, self.env_observations, actions, rewards, new_observations, self.env_done)
 
-            self.episode_rewards = np.sum([self.episode_rewards,rewards], axis=1)
+            self.episode_rewards = np.sum([self.episode_rewards,rewards], axis=0)
 
             self.env_observations = new_observations
-            state = next_state
+            self.env_state = next_state
 
             if(self.burnin_steps < self.total_iterations):
 
@@ -138,7 +140,7 @@ class M3DDPG():
         for i, critic in enumerate(self.critics):
             with torch.no_grad():
                 next_q_values = self.target_critics[i](next_states_batch, *next_actions_batch)
-                q_targets = rewards_batch[i].reshape(-1, 1) + (1-done_batch) * self.discounts[i] * next_q_values
+                q_targets = rewards_batch[i] + (1-done_batch) * self.discounts[i] * next_q_values
 
             q_values = critic(states_batch, *actions_batch)
             
@@ -169,8 +171,7 @@ class M3DDPG():
             target_params.data.copy_(target_params.data * (1.0 - tau) + true_params.data * tau)
 
     def select_action(self, actor_id, observation):
-        random = np.random.uniform()
-        if(self.burnin_steps >= self.total_iterations or random <= self.epsilons[actor_id]):
+        if(self.burnin_steps >= self.total_iterations or np.random.uniform() <= self.epsilons[actor_id]):
             #take random action
             action = self.env.action_spaces[actor_id].sample()
         else:
@@ -227,7 +228,7 @@ class M3DDPG():
         model.load_state_dict(torch.load(load_path))
 
     def numpy_to_tensor(self, np_array):
-        return torch.tensor(np_array, dtype=self.dtype)
+        return torch.tensor(np_array, dtype=self.dtype, device=self.device)
 
     def tensor_to_numpy(self, tensor):
         return tensor.detach().cpu().numpy()
