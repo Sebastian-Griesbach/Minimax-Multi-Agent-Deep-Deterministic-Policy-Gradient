@@ -140,7 +140,7 @@ class M3DDPG():
         for i, critic in enumerate(self.critics):
             with torch.no_grad():
                 next_q_values = self.target_critics[i](next_states_batch, *next_actions_batch)
-                q_targets = rewards_batch[i] + (1-done_batch) * self.discounts[i] * next_q_values
+                q_targets = (rewards_batch[i] + (1-done_batch) * self.discounts[i] * next_q_values).detach()
 
             q_values = critic(states_batch, *actions_batch)
             
@@ -178,7 +178,7 @@ class M3DDPG():
             #take greedy action with noise
             torch_observation = self.numpy_to_tensor(observation)
             action = self.actors[actor_id](torch_observation)
-            action = self.add_noise_to_action(action, self.noise_levels[actor_id], self.noise_clips[actor_id], self.action_highs[actor_id], self.action_lows[actor_id])
+            action = self.add_noise_to_action(action, self.noise_levels[actor_id], self.noise_clips[actor_id], self.action_lows[actor_id], self.action_highs[actor_id])
             action = self.tensor_to_numpy(action)
 
         return action
@@ -228,7 +228,7 @@ class M3DDPG():
         model.load_state_dict(torch.load(load_path))
 
     def numpy_to_tensor(self, np_array):
-        return torch.tensor(np_array, dtype=self.dtype, device=self.device)
+        return torch.tensor(np_array, dtype=self.dtype, device=self.device, requires_grad=False)
 
     def tensor_to_numpy(self, tensor):
         return tensor.detach().cpu().numpy()

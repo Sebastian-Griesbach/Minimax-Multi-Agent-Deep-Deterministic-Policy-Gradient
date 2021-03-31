@@ -32,10 +32,11 @@ def main():
                 epsilons = [0.2, 0.2],
                 batch_size=512,
                 burnin_steps=100000,
-                max_replay_buffer_size = 200000,
+                max_replay_buffer_size = 100000,
                 update_target_nets_fequency = 2)
 
-    return m3ddpg
+    return env, m3ddpg
+    #m3ddpg.train(1000)
     #m3ddpg.train(1000)
 
 class Multiagent_laserhockey_wrapper(Multiagent_wrapper):
@@ -56,8 +57,8 @@ class Multiagent_laserhockey_wrapper(Multiagent_wrapper):
 
     def _build_rewards(self, state, reward, info):
         pure_reward_p1 = reward - info["reward_closeness_to_puck"]
-        reward_p1 = max(0., pure_reward_p1)
-        reward_p2 = max(0., -pure_reward_p1)
+        reward_p1 = max(0., pure_reward_p1) + 20. * max(0., info["reward_puck_direction"])
+        reward_p2 = max(0., -pure_reward_p1) + 20. * max(0., -info["reward_puck_direction"])
         return [reward_p1, reward_p2]
 
 class HockeyActorNet(nn.Module):

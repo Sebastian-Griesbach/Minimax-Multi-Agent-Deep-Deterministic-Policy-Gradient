@@ -70,6 +70,6 @@ class Multiagent_replay_buffer():
         return list(map(self._numpy_to_tensor, list(itemgetter(*keys)(sample))))
 
     def _numpy_to_tensor(self, np_array):
-        return torch.tensor(np_array, dtype=self.dtype).to(self.return_device)
+        return torch.tensor(np_array, dtype=self.dtype, requires_grad=False).to(self.return_device)
 
     
