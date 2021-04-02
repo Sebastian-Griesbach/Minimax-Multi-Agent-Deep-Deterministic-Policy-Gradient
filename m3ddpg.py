@@ -184,8 +184,8 @@ class M3DDPG():
         return action
 
     def add_noise_to_action(self, action, noise_level, noise_clip, action_low, action_high):
-        noise = (torch.randn_like(action) * noise_level).clamp(-noise_clip, noise_clip)
-        return torch.max(torch.min(action + noise_clip, action_high), action_low)
+        noise = (torch.randn_like(action) * noise_level).clip(-noise_clip, noise_clip)
+        return torch.max(torch.min(action + noise, action_high), action_low)
 
     #Utilility Methods
 
