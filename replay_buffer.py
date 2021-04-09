@@ -1,3 +1,5 @@
+#Uses https://pypi.org/project/cpprb/
+
 import torch
 import numpy as np
 from cpprb import ReplayBuffer
@@ -14,6 +16,17 @@ class Multiagent_replay_buffer():
     DONE_KEY = "done"
 
     def __init__(self, state_shape, observation_shapes, action_shapes, num_agents, return_device, max_size=100000, dtype=torch.float32):
+        """initialising replay buffer
+
+        Args:
+            state_shape ([type]): shape of environment state
+            observation_shapes ([type]): List of shapes of observations according to order of agent
+            action_shapes ([type]): List of shapes of actions according to order of agents
+            num_agents ([type]): Number of agents
+            return_device ([type]): cuda device on which batches will be returned on
+            max_size (int, optional): Maximum number of timesteps the replay buffer will hold. If reached the oldest entries will be overwritten. Defaults to 100000.
+            dtype ([type], optional): Datatype to return batches in. Defaults to torch.float32.
+        """
 
         self.state_shape = state_shape
         self.observation_shapes = observation_shapes
@@ -47,6 +60,17 @@ class Multiagent_replay_buffer():
         self.dtype = dtype
 
     def add_transition(self, state, next_state, observations, actions, rewards, next_observations, done):
+        """Adds a transition of the environment to the replay buffer
+
+        Args:
+            state ([type]): old state of the environment
+            next_state ([type]): new state of the environment
+            observations ([type]): List of old observations of agents, according to order of agents.
+            actions ([type]): List of actions taken be the agents, accodring to order of agents.
+            rewards ([type]): List of rewards received according to order of agents.
+            next_observations ([type]): List of new observations of the agents after the actions have been perfomred. Accodring to order of agents.
+            done (boolean): signial whether the episode has terminated
+        """
 
         concatinated_data = [state] + [next_state] + observations + actions + rewards + next_observations + [done]
         param_dict = dict(zip(self.concatinated_keys, concatinated_data))
@@ -54,6 +78,14 @@ class Multiagent_replay_buffer():
         self.replay_buffer.add(**param_dict)
 
     def sample(self, batch_size):
+        """Sample a batch of the replay buffer
+
+        Args:
+            batch_size (int): Number of how many transitions the batch will contain
+
+        Returns:
+            [type]: sampeled batch of the replay buffer retuned as a tuple with following entries (states, next_states, observations, actions, rewards, next_observations, dones)
+        """
         sample = self.replay_buffer.sample(batch_size)
 
         states = self._numpy_to_tensor(sample[self.STATE_KEY])
@@ -67,9 +99,26 @@ class Multiagent_replay_buffer():
         return states, next_states, observations, actions, rewards, next_observations, dones
 
     def _get_subset_from_sample(self, keys, sample):
+        """Helper function to extract specific entries from a dictionary and convert them into a torch.tensor
+
+        Args:
+            keys ([type]): List of Keys to extract
+            sample (dict): Raw dictionary sample
+
+        Returns:
+            [type]: List of torch.tensor containing all entries of according to the keys. Order of the keys determins order of the tensors in the List.
+        """
         return list(map(self._numpy_to_tensor, list(itemgetter(*keys)(sample))))
 
     def _numpy_to_tensor(self, np_array):
+        """Converts numpy arrays to torch tensors setting dtype and device.
+
+        Args:
+            np_array (numpy.array): numpy array to convert
+
+        Returns:
+            torch.tensor: converted numpy array
+        """
         return torch.tensor(np_array, dtype=self.dtype, requires_grad=False).to(self.return_device)
 
     
