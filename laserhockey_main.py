@@ -86,7 +86,7 @@ class HockeyCriticNet(Multiagent_critic):
           nn.Linear(256,1)
         )
 
-    def forward(self, state, *actions) -> torch.tensor:
+    def forward(self, state, actions) -> torch.tensor:
         combined = torch.hstack([state,*actions])
         return self.layers(combined)
 

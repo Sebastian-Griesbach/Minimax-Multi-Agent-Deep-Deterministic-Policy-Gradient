@@ -32,7 +32,8 @@ class M3DDPG():
                 burnin_steps = 10000,
                 update_target_nets_frequency = 2,
                 batch_size=64):
-        """
+        """prepares necessary objects and saves hyperparameters
+
         Args:
             env (Multiagent_wrapper): gym Multiagent_wrapper of training environment
             actor_models ([type]): List of actor models according to order of agents
@@ -176,7 +177,7 @@ class M3DDPG():
 
         for i, critic in enumerate(self.critics):
             with torch.no_grad():
-                next_q_values = self.target_critics[i](next_states_batch, *next_actions_batch)
+                next_q_values = self.target_critics[i](next_states_batch, next_actions_batch)
                 q_targets = (rewards_batch[i] + (1-done_batch) * self.discounts[i] * next_q_values).detach()
 
             q_values = critic(states_batch, *actions_batch)
@@ -201,7 +202,7 @@ class M3DDPG():
             joint_actions[i] = actions
 
             self.actor_optimizers[i].zero_grad()
-            actor_loss = -self.critics[i](states_batch, *joint_actions).mean()
+            actor_loss = -self.critics[i](states_batch, joint_actions).mean()
             actor_loss.backward()
             self.actor_optimizers[i].step()
 
