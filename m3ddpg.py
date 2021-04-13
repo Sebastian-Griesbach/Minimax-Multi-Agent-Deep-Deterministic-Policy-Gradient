@@ -17,8 +17,8 @@ from replay_buffer import Multiagent_replay_buffer
 class M3DDPG():
     def __init__(self, 
                 env: Multiagent_wrapper, 
-                actor_models: List[torch.nn.Model],
-                critic_models: List[torch.nn.Model],
+                actor_models: List[torch.nn.Module],
+                critic_models: List[torch.nn.Module],
                 actor_learning_rates: List[float],
                 critic_learning_rates: List[float],
                 device: str,
@@ -180,7 +180,7 @@ class M3DDPG():
                 next_q_values = self.target_critics[i](next_states_batch, next_actions_batch)
                 q_targets = (rewards_batch[i] + (1-done_batch) * self.discounts[i] * next_q_values).detach()
 
-            q_values = critic(states_batch, *actions_batch)
+            q_values = critic(states_batch, actions_batch)
             
             self.critic_optimizers[i].zero_grad()
             critic_loss = self.loss(q_values, q_targets)
@@ -323,7 +323,7 @@ class M3DDPG():
             self.load_model(self.actor_optimizers[i], dir_path, actor_optimizer_file_names)
             self.load_model(self.critic_optimizers[i], dir_path, critic_optimizer_file_names)
 
-    def save_model(self, model: Union[torch.nn.Model, optim.Optimizer], path: str, filename: str) -> None:
+    def save_model(self, model: Union[torch.nn.Module, optim.Optimizer], path: str, filename: str) -> None:
         """Save a specific model or optimizer
 
         Args:
@@ -334,7 +334,7 @@ class M3DDPG():
         save_path = os.path.join(path,filename)
         torch.save(model.state_dict(), save_path)
 
-    def load_model(self, model: Union[torch.nn.Model, optim.Optimizer], path: str, filename: str):
+    def load_model(self, model: Union[torch.nn.Module, optim.Optimizer], path: str, filename: str):
         """load parameters of a specific model or optimizer
 
         Args:

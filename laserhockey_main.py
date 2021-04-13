@@ -31,13 +31,13 @@ def main():
                 noise_clips = [1.,1.],
                 epsilons = [0.2, 0.2],
                 batch_size=512,
-                burnin_steps=100000,
+                burnin_steps=1000,
                 max_replay_buffer_size = 100000,
-                update_target_nets_fequency = 2)
+                update_target_nets_frequency = 2)
 
-    return env, m3ddpg
-    #m3ddpg.train(1000)
-    #m3ddpg.train(1000)
+    #return env, m3ddpg
+    m3ddpg.train(1000)
+    
 
 class Multiagent_laserhockey_wrapper(Multiagent_wrapper):
     def __init__(self):
