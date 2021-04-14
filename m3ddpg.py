@@ -79,7 +79,7 @@ class M3DDPG():
 
         self.actors, self.critics, self.target_actors, self.target_critics, self.actor_optimizers, self.critic_optimizers  = [], [], [], [], [], []
 
-        for i in range(len(actor_models)):
+        for i in range(self.num_agents):
             self.actors.append(actor_models[i].train().to(self.device))
             self.critics.append(critic_models[i].train().to(self.device))
 
@@ -239,8 +239,10 @@ class M3DDPG():
             action = self.env.action_spaces[actor_id].sample()
         else:
             #take greedy action with noise
-            torch_observation = self._numpy_to_tensor(observation)
-            action = self.actors[actor_id](torch_observation)
+            torch_observation = self._numpy_to_tensor(observation).unsqueeze(0)
+            self.actors[actor_id].eval()
+            action = self.actors[actor_id](torch_observation).squeeze(dim=0)
+            self.actors[actor_id].train()
             action = self._add_noise_to_action(action, self.noise_levels[actor_id], self.noise_clips[actor_id], self.action_lows[actor_id], self.action_highs[actor_id])
             action = self._tensor_to_numpy(action)
 
@@ -282,8 +284,8 @@ class M3DDPG():
                 numpy.array: action of policy
             """
             with torch.no_grad():
-                tensor_obs = torch.tensor(obs, dtype=self.dtype, requires_grad=False)
-                action = policy(tensor_obs)
+                tensor_obs = torch.tensor(obs, dtype=self.dtype, requires_grad=False).unsqueeze(0)
+                action = policy(tensor_obs).squeeze(dim=0)
             return action.numpy()
         return act
 
@@ -320,8 +322,8 @@ class M3DDPG():
             self.target_actors[i] = copy.deepcopy(self.actors[i]).eval().to(self.device)
             self.target_critics[i] = copy.deepcopy(self.critics[i]).eval().to(self.device)
 
-            self.load_model(self.actor_optimizers[i], dir_path, actor_optimizer_file_names)
-            self.load_model(self.critic_optimizers[i], dir_path, critic_optimizer_file_names)
+            self.load_model(self.actor_optimizers[i], dir_path, actor_optimizer_file_names[i])
+            self.load_model(self.critic_optimizers[i], dir_path, critic_optimizer_file_names[i])
 
     def save_model(self, model: Union[torch.nn.Module, optim.Optimizer], path: str, filename: str) -> None:
         """Save a specific model or optimizer

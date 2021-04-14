@@ -21,22 +21,22 @@ def main():
     m3ddpg = M3DDPG(env= env, 
                 actor_models = [actor1, actor2],
                 critic_models = [critic1, critic2],
-                actor_learning_rates = [0.0001, 0.0001],
-                critic_learning_rates = [0.0001, 0.0001],
+                actor_learning_rates = [0.00001, 0.00001],
+                critic_learning_rates = [0.00001, 0.00001],
                 device = "cuda",
                 discounts = [0.99, 0.99],
                 taus = [0.05, 0.05],
-                noise_levels = [0.2, 0.2],
-                critic_noise_levels = [0.02, 0.02],
-                noise_clips = [1.,1.],
+                noise_levels = [0.02, 0.02],
+                critic_noise_levels = [0.002, 0.002],
+                noise_clips = [0.5, 0.5],
                 epsilons = [0.2, 0.2],
                 batch_size=512,
-                burnin_steps=1000,
-                max_replay_buffer_size = 100000,
+                burnin_steps=100000,
+                max_replay_buffer_size = 500000,
                 update_target_nets_frequency = 2)
 
-    #return env, m3ddpg
-    m3ddpg.train(1000)
+    return env, m3ddpg
+    #m3ddpg.train(1000)
     
 
 class Multiagent_laserhockey_wrapper(Multiagent_wrapper):
@@ -66,9 +66,10 @@ class HockeyActorNet(nn.Module):
         super(HockeyActorNet, self).__init__()
 
         self.layers = nn.Sequential(
-          nn.Linear(in_dim,128),
-          nn.ReLU(),
-          nn.Linear(128, out_dim)
+            nn.BatchNorm1d(in_dim),    
+            nn.Linear(in_dim,128),
+            nn.ReLU(),
+            nn.Linear(128, out_dim)
         )
 
         self.register_buffer('min_value', torch.tensor(min_value, requires_grad=False, dtype=torch.float32))
@@ -81,9 +82,10 @@ class HockeyCriticNet(Multiagent_critic):
     def __init__(self, in_dim):
         super().__init__()
         self.layers = nn.Sequential(
-          nn.Linear(in_dim,256),
-          nn.ReLU(),
-          nn.Linear(256,1)
+            nn.BatchNorm1d(in_dim),
+            nn.Linear(in_dim,256),
+            nn.ReLU(),
+            nn.Linear(256,1)
         )
 
     def forward(self, state, actions) -> torch.tensor:

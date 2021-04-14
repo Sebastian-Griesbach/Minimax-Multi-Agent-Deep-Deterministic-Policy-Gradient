@@ -25,14 +25,14 @@ def main():
                 device = "cpu",
                 discounts = [0.99, 0.99],
                 taus = [0.05, 0.05],
-                noise_levels = [0., 0.],
-                critic_noise_levels = [0., 0.],
-                noise_clips = [0.,0.],
-                epsilons = [0., 0.],
+                noise_levels = [0.1, 0.1],
+                critic_noise_levels = [0.1, 0.1],
+                noise_clips = [0.1,0.1],
+                epsilons = [0.5, 0.5],
                 batch_size=8,
                 burnin_steps=0,
                 max_replay_buffer_size = 10000,
-                update_target_nets_fequency = 2)
+                update_target_nets_frequency = 2)
 
     #return env, m3ddpg
     m3ddpg.train(100)
@@ -66,7 +66,7 @@ class DebugCriticNet(Multiagent_critic):
         )
         self.index_value = index_value
 
-    def forward(self, state, *actions) -> torch.tensor:
+    def forward(self, state, actions) -> torch.tensor:
         combined = torch.hstack([state,*actions])
         out = self.layers(combined)
         out = torch.clip(out, -0.5, +0.5)
@@ -84,10 +84,10 @@ class DebugEnv(gym.Env):
         self.max_num_steps = 1000.
 
     def step(self, action):
+        self.num_steps += 1
         self.obs = np.hstack([action, self.num_steps/self.max_num_steps])
         reward = 1
         done =  self.max_num_steps < self.num_steps
-        self.num_steps += 1
         return self.obs, reward, done, None
 
     def reset(self):
