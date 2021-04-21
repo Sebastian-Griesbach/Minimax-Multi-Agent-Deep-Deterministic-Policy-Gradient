@@ -30,6 +30,7 @@ class M3DDPG():
                 epsilons: List[float],
                 max_replay_buffer_size: int,
                 burnin_steps: int = 10000,
+                burnin_policies: Union[List[Callable[[np.array], np.array]], None] = None,
                 update_target_nets_frequency: int = 2,
                 batch_size: int = 64) -> None:
         """initalize algorithm, prepares necessary objects and saves hyperparameters
@@ -49,7 +50,8 @@ class M3DDPG():
             epsilons (List[float]): List of probability values to take an entirly random action (sampeled from the actionspace) at each time step, for more exploration additionally to exploration noise. According to order of agents
             max_replay_buffer_size (int): Maximal number of time steps the Replaybuffer will hold. When this number is reached the oldest entries will be overwritten.
             burnin_steps (int, optional): number of timesteps taken befor the training routine starts. During this time random actions sampeled from the actionspace will be performed. Defaults to 10000.. Defaults to 10000.
-            update_target_nets_frequency (int, optional): Frequency of timesteps at which the targents as well as the original actor net ist updated. Defaults to 2.. Defaults to 2.
+            burnin_policies Union[List[Callable[[np.array], np.array]], None]: Policies to use during the burinphase. According to order of Agents. Defaults to random sample from actionspaces of agents.
+            update_target_nets_frequency (int, optional): Frequency of timesteps at which the targents as well as the original actor net ist updated. Defaults to 2.
             batch_size (int, optional): Number of timesteps that are take into account at each update steps. Defaults to 64.. Defaults to 64.
         """
 
@@ -67,6 +69,12 @@ class M3DDPG():
         self.batch_size = batch_size
         self.update_target_nets_frequency = update_target_nets_frequency
         self.burnin_steps = burnin_steps
+
+        self.burnin_policies = burnin_policies
+        if(self.burnin_policies == None):
+            self.burnin_policies = []
+            for action_space in self.env.action_spaces:
+                self.burnin_policies.append(lambda obs: action_space.sample())
 
         self.state_shape = env.state_space.shape
         self.action_shapes = [action_space.shape for action_space in env.action_spaces]
@@ -138,6 +146,7 @@ class M3DDPG():
                 with torch.no_grad():
                     actions.append(self._select_action(actor_id, self.env_observations[actor_id]))
 
+            #self.env.render()
             next_state, new_observations, rewards, self.env_done, _ = self.env.step(actions)
 
             self.replay_buffer.add_transition(self.env_state, next_state, self.env_observations, actions, rewards, new_observations, self.env_done)
@@ -178,7 +187,7 @@ class M3DDPG():
         for i, critic in enumerate(self.critics):
             with torch.no_grad():
                 next_q_values = self.target_critics[i](next_states_batch, next_actions_batch)
-                q_targets = (rewards_batch[i] + (1-done_batch) * self.discounts[i] * next_q_values).detach()
+                q_targets = (rewards_batch[i] + (1.-done_batch) * self.discounts[i] * next_q_values).detach()
 
             q_values = critic(states_batch, actions_batch)
             
@@ -234,7 +243,10 @@ class M3DDPG():
         Returns:
             np.array: explorativ action
         """
-        if(self.burnin_steps >= self.total_iterations or np.random.uniform() <= self.epsilons[actor_id]):
+
+        if(self.burnin_steps >= self.total_iterations):
+            action = self.burnin_policies[actor_id](observation)
+        elif(np.random.uniform() <= self.epsilons[actor_id]):
             #take random action
             action = self.env.action_spaces[actor_id].sample()
         else:

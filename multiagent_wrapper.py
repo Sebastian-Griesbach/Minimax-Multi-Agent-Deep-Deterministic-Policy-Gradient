@@ -32,6 +32,7 @@ class Multiagent_wrapper(ABC, gym.Wrapper):
         """
         joint_action = self._build_joint_action(actions)
         state, reward, done, info = self.env.step(joint_action)
+        state = self._build_state(state)
         observations = self._build_observations(state)
         rewards = self._build_rewards(state, reward, info)
         return state, observations, rewards, done, info
@@ -45,6 +46,9 @@ class Multiagent_wrapper(ABC, gym.Wrapper):
         state = self.env.reset()
         observations = self._build_observations(state)
         return state, observations
+
+    def _build_state(self, state):
+        return state
 
     @abstractmethod
     def _build_joint_action(self, actions: List[np.array]) -> np.array:

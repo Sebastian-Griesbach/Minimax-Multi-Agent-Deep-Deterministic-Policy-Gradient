@@ -28,7 +28,7 @@ def main():
                 noise_levels = [0.1, 0.1],
                 critic_noise_levels = [0.1, 0.1],
                 noise_clips = [0.1,0.1],
-                epsilons = [0.5, 0.5],
+                epsilons = [0., 0.],
                 batch_size=8,
                 burnin_steps=0,
                 max_replay_buffer_size = 10000,
