@@ -38,7 +38,7 @@ def main():
                 critic_models = [critic1, critic2],
                 actor_learning_rates = [0.001, 0.001],
                 critic_learning_rates = [0.001, 0.001],
-                device = "cuda",
+                device = "cpu",
                 discounts = [0.99, 0.99],
                 taus = [0.005, 0.005],
                 noise_levels = [0.2, 0.2],
@@ -48,7 +48,7 @@ def main():
                 batch_size=64,
                 burnin_steps=100000,
                 burnin_policies=burnin_policies,
-                max_replay_buffer_size = 100000,
+                max_replay_buffer_size = 1000000,
                 update_target_nets_frequency = 2)
 
     return env, m3ddpg
@@ -74,11 +74,10 @@ class Multiagent_laserhockey_wrapper(Multiagent_wrapper):
     def _build_observations(self, state):
         return [state/self.scaling_vector, self.env.obs_agent_two()/self.scaling_vector]
 
-    #TODO Check correctness of rewards
     def _build_rewards(self, state, reward, info):
         pure_reward_p1 = reward - info["reward_closeness_to_puck"]
-        reward_p1 = max(0., pure_reward_p1) #+ 20. * max(0., info["reward_puck_direction"])
-        reward_p2 = max(0., -pure_reward_p1) #+ 20. * max(0., -info["reward_puck_direction"])
+        reward_p1 = max(-1., pure_reward_p1) #+ 20. * max(0., info["reward_puck_direction"])
+        reward_p2 = max(-1., -pure_reward_p1) #+ 20. * max(0., -info["reward_puck_direction"])
         return [reward_p1, reward_p2]
 
     def _build_state(self, state):
