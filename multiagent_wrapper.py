@@ -47,7 +47,15 @@ class Multiagent_wrapper(ABC, gym.Wrapper):
         observations = self._build_observations(state)
         return state, observations
 
-    def _build_state(self, state):
+    def _build_state(self, state: np.array) -> np.array:
+        """This function is optional, it can be used to preprocess the state
+
+        Args:
+            state (np.array): raw state given by the original environment
+
+        Returns:
+            np.array: preprocessed state
+        """
         return state
 
     @abstractmethod

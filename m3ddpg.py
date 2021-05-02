@@ -15,6 +15,8 @@ from multiagent_wrapper import Multiagent_wrapper
 from replay_buffer import Multiagent_replay_buffer
 
 class M3DDPG():
+    ZERO_DIVISION_PREVENTION = 1e-8
+
     def __init__(self, 
                 env: Multiagent_wrapper, 
                 actor_models: List[torch.nn.Module],
@@ -28,6 +30,7 @@ class M3DDPG():
                 noise_clips: List[float],
                 critic_noise_levels: List[float],
                 epsilons: List[float],
+                alphas: List[float],
                 max_replay_buffer_size: int,
                 burnin_steps: int = 10000,
                 burnin_policies: Union[List[Callable[[np.array], np.array]], None] = None,
@@ -48,6 +51,7 @@ class M3DDPG():
             noise_clips (List[float]): List of values the exploration noise will be clipped to. Only one value per agent, according to order of agents.
             critic_noise_levels (List[float]): List of factors multiplied with standart normal noise. This noise is added to the target_values of the critics during training. According to order of agents
             epsilons (List[float]): List of probability values to take an entirly random action (sampeled from the actionspace) at each time step, for more exploration additionally to exploration noise. According to order of agents
+            alphas (List[float]): List of scaling factors for adversarial gradient step on opponent actions during training. According to order of agents.
             max_replay_buffer_size (int): Maximal number of time steps the Replaybuffer will hold. When this number is reached the oldest entries will be overwritten.
             burnin_steps (int, optional): number of timesteps taken befor the training routine starts. During this time random actions sampeled from the actionspace will be performed. Defaults to 10000.. Defaults to 10000.
             burnin_policies Union[List[Callable[[np.array], np.array]], None]: Policies to use during the burinphase. According to order of Agents. Defaults to random sample from actionspaces of agents.
@@ -66,6 +70,7 @@ class M3DDPG():
         self.noise_clips = noise_clips
         self.critic_noise_levels = critic_noise_levels
         self.epsilons = epsilons
+        self.alphas = alphas
         self.batch_size = batch_size
         self.update_target_nets_frequency = update_target_nets_frequency
         self.burnin_steps = burnin_steps
@@ -181,12 +186,17 @@ class M3DDPG():
             done_batch: Batch of signals whether the episode is done
         """
         with torch.no_grad():
-            next_actions_batch_map = _map_function_arg_pairs(self.target_actors, next_observations_batch)
-            next_actions_batch = list(map(self._add_noise_to_action, next_actions_batch_map, self.critic_noise_levels, self.noise_clips, self.action_lows, self.action_highs))
+            next_actions_batch = list(_map_function_arg_pairs(self.target_actors, next_observations_batch))
 
         for i, critic in enumerate(self.critics):
+            if self.alphas[i] > 0.:
+                adversarial_next_actions = self._get_adverserial_actions(next_states_batch, next_actions_batch, self.target_critics[i])
+            else:
+                adversarial_next_actions = next_actions_batch
+            adversarial_next_actions[i] = next_actions_batch[i]
+            adversarial_next_actions = list(map(self._add_noise_to_action, adversarial_next_actions, self.critic_noise_levels, self.noise_clips, self.action_lows, self.action_highs))
             with torch.no_grad():
-                next_q_values = self.target_critics[i](next_states_batch, next_actions_batch)
+                next_q_values = self.target_critics[i](next_states_batch, adversarial_next_actions)
                 q_targets = (rewards_batch[i] + (1.-done_batch) * self.discounts[i] * next_q_values).detach()
 
             q_values = critic(states_batch, actions_batch)
@@ -208,12 +218,43 @@ class M3DDPG():
         for i, actor in enumerate(self.actors):
             actions = actor(observations_batch[i])
             joint_actions = copy.deepcopy(actions_batch)
-            joint_actions[i] = actions
+            if self.alphas[i] > 0.:
+                adversarial_joint_actions = self._get_adverserial_actions(states_batch, joint_actions, self.critics[i])
+            else:
+                adversarial_joint_actions = joint_actions
+            adversarial_joint_actions[i] = actions
 
             self.actor_optimizers[i].zero_grad()
-            actor_loss = -self.critics[i](states_batch, joint_actions).mean()
+            actor_loss = -self.critics[i](states_batch, adversarial_joint_actions).mean()
             actor_loss.backward()
             self.actor_optimizers[i].step()
+
+    def _get_adverserial_actions(self, states, actions, critic):
+        """Creates adverserial perturbed actions based on the gradient of the critic.
+
+        Args:
+            states: Batch of states in which the actions took place.
+            actions: List of batches of actions taken by each agent in the according states.
+            critic: critic after which gradient to adapt the actions.
+
+        Returns:
+            List[torch.tensor]: List of batches Adverserially perturbed actions of all agents.
+        """
+
+        actions = list(map(lambda action: action.requires_grad_(True), actions))
+        actor_gain = critic(states, actions).mean()
+        actor_gain.backward()
+        adverserial_actions = []
+        with torch.no_grad():
+            for i, action in enumerate(actions):
+                action_gradient = action.grad
+                gradient_norm = torch.torch.linalg.norm(action_gradient, dim=1, keepdim=True)
+                action_norm = torch.torch.linalg.norm(action, dim=1, keepdim=True)
+                perturbation = - self.alphas[i] * action_norm * (action_gradient/(gradient_norm+self.ZERO_DIVISION_PREVENTION))
+                adverserial_action = torch.max(torch.min(action+perturbation, self.action_highs[i]), self.action_lows[i]).detach()
+                adverserial_actions.append(adverserial_action)
+
+        return adverserial_actions
 
     def _update_target_nets(self):
         """Updates actor and critic target net, uses the tau parameters
