@@ -1,13 +1,13 @@
 # rl-m3ddpg
 
-A general pytorch implementation of the Minimax Multi-Agent Deep Deterministic Policy Gradient (M3DDPG) [[1]](#1) Algorithm used for multiagent reinforcment learning.
+A general pytorch implementation of the Minimax Multi-Agent Deep Deterministic Policy Gradient (M3DDPG) [[1]](#1) Algorithm used for multiagent reinforcement learning.
 
 M3DDPG is an extension to the Multi-Agent Deep Deterministic Policy Gradient (MADDPG) [[2]](#2) Algorithm. MADDPG uses critics with access to the actions of all agents to evaluate the action of a specific agent in the context of the actions of the other agents.
 M3DDPG aditionally uses a worst case estimate, both in training the critics and the actors to make the learned policies more robost against previously unseen opposing policies.
 
 ## Features
 
-- Interface for interpreting gym environments as multi-agent environment. Gym environments are not designed to support multi-agent environments nativly therefore a wrapper is used to interpret any gym environment as a multi-agent environment.
+- Interface for interpreting gym environments as multi-agent environment. Gym environments are not designed to support multi-agent environments nativly, therefore a wrapper is used to interpret any gym environment as a multi-agent environment.
 
 - Support for independent action and observation spaces. As described in the Paper [[1]](#1)[[2]](#2), different agents may have different observation spaces and action spaces. This implemention supports this property.
 
@@ -15,7 +15,7 @@ M3DDPG aditionally uses a worst case estimate, both in training the critics and 
 
 - Implementing two improvments from the Twin Delayed Deep Deterministic Policy Gradient (TD3) [[3]](#3) algorithm. Namely delayed targetnets and the addition of noise to the target Q-values. While the focus of this implementation is not performance but rather readability, the twin networks addition has been left out, as this would have slowed down this implementation significantly.
 
-## How to use on a gym environment
+## How to use
 
 1. Implement the `Multiagent_laserhockey_wrapper` interface from `multiagent_wrapper.py` with all necessary methods. This indicates how to interpret the environment as multiagent environment.
 
@@ -26,6 +26,9 @@ M3DDPG aditionally uses a worst case estimate, both in training the critics and 
 4. Choose hyperparameters.
 
 5. Start training.
+
+See example implementation on how these steps are to be made in detail.
+Also all functions contain a docstring for further explanation.
 
 ## Example implementation
 
@@ -42,5 +45,6 @@ The following animation shows two agents trained by M3DDPG for approximatly 4,00
 
 <a id="3">[3]</a>Fujimoto, S., Hoof, H. &amp; Meger, D.. (2018). Addressing Function Approximation Error in Actor-Critic Methods. <i>Proceedings of the 35th International Conference on Machine Learning</i>, in <i>Proceedings of Machine Learning Research</i> 80:1587-1596 Available from http://proceedings.mlr.press/v80/fujimoto18a.html.
 
-<a id="4">[4]</a> G. Martius, and S. Blaes.  A simple laser-hockey gym environment for RL agents. https://github.com/martius-lab/laser-hockey-env, 2021. (In case the original repository has been altered to incompatibility, this fork contains the version used during the development https://github.com/Sebastian-Griesbach/laser-hockey-env)
+<a id="4">[4]</a> G. Martius, and S. Blaes.  A simple laser-hockey gym environment for RL agents. https://github.com/martius-lab/laser-hockey-env, 2021. 
+(In case the original repository has been altered to incompatibility, this fork contains the version used during development https://github.com/Sebastian-Griesbach/laser-hockey-env)
 
