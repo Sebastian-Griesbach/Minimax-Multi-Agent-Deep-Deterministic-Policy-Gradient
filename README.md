@@ -1,4 +1,4 @@
-# rl-m3ddpg
+# Minimax Multi-Agent Deep Deterministic Policy Gradient
 
 A general pytorch implementation of the Minimax Multi-Agent Deep Deterministic Policy Gradient (M3DDPG) [[1]](#1) Algorithm used for multiagent reinforcement learning.
 
